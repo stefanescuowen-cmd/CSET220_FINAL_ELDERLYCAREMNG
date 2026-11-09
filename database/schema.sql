@@ -1,7 +1,3 @@
--- Elderly Care Management System
--- Complete Database Schema
--- MySQL 8.0+
-
 CREATE DATABASE IF NOT EXISTS elderly_care_management
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
