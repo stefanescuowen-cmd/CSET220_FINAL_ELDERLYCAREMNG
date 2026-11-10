@@ -15,8 +15,6 @@ ON DUPLICATE KEY UPDATE
 
 -- 2. INITIAL BILLING RATES
 
--- 2. INITIAL BILLING RATES
-
 INSERT INTO billing_rates (charge_type, rate_amount, effective_from)
 SELECT new_rates.charge_type, new_rates.rate_amount, new_rates.effective_from
 FROM (
