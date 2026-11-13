@@ -1,0 +1,88 @@
+*{
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root
+{
+    --Sage: #8FAF9B;
+    --Ivory: #F6F3EA;
+    --Gold: #D4B477;
+    --Charcoal: #344447;
+
+    --DSage: #6E8E7A;
+    --DIvory: #D5D2C9;
+    --DGold: #B39356;
+    --DCharcoal: #132326;
+
+    --LSage: #B0D0BC;
+    --LIvory: #FFFFFF;
+    --LGold: #F5D598;
+    --LCharcoal: #556568;
+}
+
+*{outline: 1px black solid;}
+
+html
+{
+    margin: 0;
+}
+body
+{
+    background-color: var(--Ivory);
+    margin: 0;
+}
+img
+{
+    -webkit-user-drag: none;
+}
+
+/* Elements */
+h1
+{
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--Charcoal);
+}
+p
+{
+    color: var(--Charcoal);
+    font-family: 'Times New Roman', Times, serif;
+}
+
+/* Header */
+header
+{
+    height: 140px;
+    background-color: var(--LSage);
+    display: flex;
+    padding: 20px;
+}
+header img
+{
+    -webkit-user-drag: none;
+    user-select: none;
+    height: 100%;
+}
+header h1
+{
+    font-weight: 900;
+    justify-self: center;
+}
+header #HH1
+{
+    width: 400px;
+    height: 100%;
+    align-content: center;
+}
+header #HImg
+{
+    height: 100%;
+    width: 150px;
+}
+
+.Big
+{
+    font-size: larger;
+    color: var(--DCharcoal);
+}
