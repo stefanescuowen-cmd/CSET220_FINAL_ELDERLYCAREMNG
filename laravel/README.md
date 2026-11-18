@@ -1,58 +1,47 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Elder Care Management (Laravel)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+The Laravel application implements the confirmed project workflows: account approval and role checks, patient and employee search, group and roster management, date/time based appointment scheduling, doctor meeting and prescription approval, caregiver activity tracking, missed activity reporting, family access codes, and monthly cash billing.
 
-## About Laravel
+## Local setup
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Requirements: PHP 8.3+, Composer, and Node.js/npm if you want to build frontend assets. The default `.env.example` uses SQLite.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```sh
+composer install
+copy .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Create the SQLite database file before migrating if it does not already exist:
 
-## Contributing
+```sh
+type nul > database/database.sqlite
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+In PowerShell, use `New-Item database/database.sqlite -ItemType File` instead.
 
-## Code of Conduct
+Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` in `.env` before the initial seed if you want a first Admin account. Then run:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```sh
+php artisan migrate --seed
+```
 
-## Security Vulnerabilities
+Clear the initial Admin password from `.env` after seeding. The seeder only creates that account if both values are set and the email does not already exist. Admin/Supervisor can create staff accounts and approve registrations. Create patient groups on the Roster page, assign patients to a group on the Patients page, then create that group's roster. Patients in the group are assigned across the selected caregivers.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+To automatically mark activities missed after their deadline, keep Laravel's scheduler running locally:
 
-## License
+```sh
+php artisan schedule:work
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+The roster form includes suggested daily activity times that can be changed to match the project's final schedule. Appointment time availability uses the date and interval stored on that roster. Doctor appointment slots are treated as exclusive at an exact time.
+
+## Confirmed billing rules
+
+- Daily care: $10 for each daily care record marked completed.
+- Doctor appointments: $50 for each completed appointment.
+- Medication: $5 per medication whose active dates overlap the invoice month.
+- Payments are cash only.
+- An invoice is unique per patient and calendar month. Repeating Update returns the existing invoice and does not duplicate line items.
+
+The project notes do not define partial-month medication proration. The current implementation charges $5 for a medication if its active dates overlap any part of that month. The project notes also do not define activity deadlines; the suggested times shown on the roster form are editable defaults.
