@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -12,22 +13,23 @@ class CareController extends Controller
 {
     public function dashboard(Request $request)
     {
-        $user = $request->user(); $role = $user->role->name;
+        $user = $this->actor($request); $role = $user->role->name;
         $counts = ['patients' => DB::table('patients')->count(), 'appointments' => DB::table('appointments')->whereDate('appointment_date', today())->count(), 'pending' => DB::table('users')->where('is_approved', false)->count()];
         return view('dashboard', compact('user', 'role', 'counts'));
     }
 
     public function myCare(Request $request)
     {
+        $actor = $this->actor($request);
         $date = $request->validate(['date' => ['nullable', 'date']])['date'] ?? today()->toDateString();
-        $patient = DB::table('patients')->where('user_id', $request->user()->id)->first();
-        if ($request->user()->role->name === 'Patient') abort_unless($patient, 404);
-        if ($request->user()->role->name === 'Family Member' && ! $request->filled('patient_id')) {
+        $patient = DB::table('patients')->where('user_id', $actor->id)->first();
+        if ($actor->role->name === 'Patient') abort_unless($patient, 404);
+        if ($actor->role->name === 'Family Member' && ! $request->filled('patient_id')) {
             return view('my-care', ['activities' => collect(), 'appointment' => null, 'date' => $date, 'carePatient' => null]);
         }
-        if ($request->user()->role->name === 'Family Member') {
+        if ($actor->role->name === 'Family Member') {
             $data = $request->validate(['patient_id' => ['required', 'exists:patients,id'], 'family_code' => ['required', 'string']]);
-            $family = DB::table('patient_family_members')->where('patient_id', $data['patient_id'])->where('family_user_id', $request->user()->id)->first();
+            $family = DB::table('patient_family_members')->where('patient_id', $data['patient_id'])->where('family_user_id', $actor->id)->first();
             abort_unless($family && Hash::check($data['family_code'], $family->family_code_hash), 403, 'Patient ID and family code do not match.');
             $patient = DB::table('patients')->where('id', $data['patient_id'])->first();
         }
@@ -84,11 +86,12 @@ class CareController extends Controller
 
     public function employees(Request $request)
     {
+        $actor = $this->actor($request);
         $query = DB::table('employees')->join('users', 'users.id', '=', 'employees.user_id')->join('roles', 'roles.id', '=', 'users.role_id');
         $this->search($query, $request, ['users.first_name', 'users.last_name', 'users.email', 'employees.employee_number']);
         if ($request->filled('role')) $query->where('roles.name', $request->string('role'));
         $rows = $query->select('employees.*', 'users.first_name', 'users.last_name', 'roles.name as role_name')->orderBy('users.last_name')->paginate(20)->withQueryString();
-        return view('employees', ['employees' => $rows, 'roles' => DB::table('roles')->orderBy('name')->get(), 'canEditSalary' => request()->user()->role->name === 'Admin']);
+        return view('employees', ['employees' => $rows, 'roles' => DB::table('roles')->orderBy('name')->get(), 'canEditSalary' => $actor->role->name === 'Admin']);
     }
 
     public function updateSalary(Request $request, int $employee)
@@ -100,12 +103,14 @@ class CareController extends Controller
 
     public function createEmployee(Request $request)
     {
-        $allowedRoles = $request->user()->role->name === 'Admin' ? 'Supervisor,Doctor,Caregiver' : 'Doctor,Caregiver';
+        $actor = $this->actor($request);
+        $isAdmin = $actor->role->name === 'Admin';
+        $allowedRoles = $isAdmin ? 'Supervisor,Doctor,Caregiver' : 'Doctor,Caregiver';
         $data = $request->validate(['first_name' => ['required', 'string', 'max:60'], 'last_name' => ['required', 'string', 'max:60'], 'email' => ['required', 'email', 'unique:users,email'], 'phone' => ['nullable', 'string', 'max:25'], 'role' => ['required', 'in:'.$allowedRoles], 'employee_number' => ['nullable', 'string', 'max:30', 'unique:employees,employee_number'], 'salary' => ['nullable', 'numeric', 'min:0'], 'hire_date' => ['nullable', 'date'], 'password' => ['required', 'confirmed', 'min:8']]);
-        DB::transaction(function () use ($data) {
+        DB::transaction(function () use ($data, $isAdmin) {
             $roleId = DB::table('roles')->where('name', $data['role'])->value('id');
             $userId = DB::table('users')->insertGetId(['role_id' => $roleId, 'first_name' => $data['first_name'], 'last_name' => $data['last_name'], 'email' => $data['email'], 'phone' => $data['phone'] ?? null, 'password' => \Illuminate\Support\Facades\Hash::make($data['password']), 'is_approved' => true, 'is_active' => true, 'created_at' => now(), 'updated_at' => now()]);
-            DB::table('employees')->insert(['user_id' => $userId, 'employee_number' => $data['employee_number'] ?? null, 'salary' => request()->user()->role->name === 'Admin' ? ($data['salary'] ?? null) : null, 'hire_date' => $data['hire_date'] ?? null, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('employees')->insert(['user_id' => $userId, 'employee_number' => $data['employee_number'] ?? null, 'salary' => $isAdmin ? ($data['salary'] ?? null) : null, 'hire_date' => $data['hire_date'] ?? null, 'created_at' => now(), 'updated_at' => now()]);
         });
         return back()->with('status', 'Employee account created and activated.');
     }
@@ -122,13 +127,14 @@ class CareController extends Controller
 
     public function appointments(Request $request)
     {
+        $actor = $this->actor($request);
         $query = DB::table('appointments')->join('patients', 'patients.id', '=', 'appointments.patient_id')->join('users as patient_users', 'patient_users.id', '=', 'patients.user_id')->join('users as doctor_users', 'doctor_users.id', '=', 'appointments.doctor_user_id');
-        if ($request->user()->role->name === 'Doctor') $query->where('appointments.doctor_user_id', $request->user()->id);
+        if ($actor->role->name === 'Doctor') $query->where('appointments.doctor_user_id', $actor->id);
         if ($request->filled('q')) { $term = '%'.$request->string('q')->trim().'%'; $query->where(fn ($q) => $q->where('patient_users.first_name', 'like', $term)->orWhere('patient_users.last_name', 'like', $term)->orWhere('appointments.patient_id', 'like', $term)); }
         if ($request->filled('date')) $query->whereDate('appointments.appointment_date', $request->input('date'));
         $appointments = $query->select('appointments.*', 'patient_users.first_name as patient_first_name', 'patient_users.last_name as patient_last_name', 'doctor_users.first_name as doctor_first_name', 'doctor_users.last_name as doctor_last_name')->orderByDesc('appointments.appointment_date')->paginate(20)->withQueryString();
-        $drafts = $request->user()->role->name === 'Doctor' ? DB::table('prescriptions')->where('prescribed_by_user_id', $request->user()->id)->where('status', 'Draft')->get() : collect();
-        $medicationRows = $request->user()->role->name === 'Doctor' ? DB::table('prescription_medications')->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')->join('patients', 'patients.id', '=', 'prescriptions.patient_id')->where('prescriptions.prescribed_by_user_id', $request->user()->id)->where('prescriptions.status', 'Approved')->select('prescription_medications.*', 'patients.id as patient_id')->orderByDesc('prescription_medications.created_at')->get() : collect();
+        $drafts = $actor->role->name === 'Doctor' ? DB::table('prescriptions')->where('prescribed_by_user_id', $actor->id)->where('status', 'Draft')->get() : collect();
+        $medicationRows = $actor->role->name === 'Doctor' ? DB::table('prescription_medications')->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')->join('patients', 'patients.id', '=', 'prescriptions.patient_id')->where('prescriptions.prescribed_by_user_id', $actor->id)->where('prescriptions.status', 'Approved')->select('prescription_medications.*', 'patients.id as patient_id')->orderByDesc('prescription_medications.created_at')->get() : collect();
         return view('appointments', compact('appointments', 'drafts', 'medicationRows'));
     }
 
@@ -179,7 +185,8 @@ class CareController extends Controller
 
     public function markMeeting(Request $request, int $appointment)
     {
-        $record = DB::table('appointments')->where('id', $appointment)->first(); abort_unless($record && $record->doctor_user_id === $request->user()->id, 404);
+        $actor = $this->actor($request);
+        $record = DB::table('appointments')->where('id', $appointment)->first(); abort_unless($record && $record->doctor_user_id === $actor->id, 404);
         abort_unless($record->appointment_date === today()->toDateString() && $record->status === 'Scheduled', 403, 'Only a scheduled meeting can be confirmed on its appointment date.');
         DB::table('appointments')->where('id', $appointment)->update(['meeting_confirmed' => true, 'status' => 'Completed', 'updated_at' => now()]);
         return back()->with('status', 'Appointment meeting recorded.');
@@ -187,13 +194,14 @@ class CareController extends Controller
 
     public function createPrescription(Request $request)
     {
+        $actor = $this->actor($request);
         $data = $request->validate(['appointment_id' => ['required', 'exists:appointments,id'], 'doctor_comments' => ['nullable', 'string'], 'medications' => ['required', 'array', 'min:1'], 'medications.*.time_slot' => ['required', 'in:Morning,Afternoon,Night'], 'medications.*.medication_name' => ['required', 'string', 'max:120'], 'medications.*.dosage' => ['required', 'string', 'max:120'], 'medications.*.instructions' => ['nullable', 'string'], 'medications.*.active_from' => ['required', 'date', 'after_or_equal:today']]);
         $appointment = DB::table('appointments')->where('id', $data['appointment_id'])->first();
-        abort_unless($appointment && $appointment->doctor_user_id === $request->user()->id, 404);
+        abort_unless($appointment && $appointment->doctor_user_id === $actor->id, 404);
         if ($appointment->appointment_date !== today()->toDateString() || ! $appointment->meeting_confirmed) throw ValidationException::withMessages(['appointment_id' => 'A prescription can only be created after meeting the patient on the appointment date.']);
         $slots = array_column($data['medications'], 'time_slot'); if (count($slots) !== count(array_unique($slots))) throw ValidationException::withMessages(['medications' => 'Only one medication is allowed per time slot.']);
-        DB::transaction(function () use ($data, $appointment, $request) {
-            $id = DB::table('prescriptions')->insertGetId(['appointment_id' => $appointment->id, 'patient_id' => $appointment->patient_id, 'prescribed_by_user_id' => $request->user()->id, 'status' => 'Draft', 'doctor_comments' => $data['doctor_comments'] ?? null, 'approved_at' => null, 'created_at' => now(), 'updated_at' => now()]);
+        DB::transaction(function () use ($data, $appointment, $actor) {
+            $id = DB::table('prescriptions')->insertGetId(['appointment_id' => $appointment->id, 'patient_id' => $appointment->patient_id, 'prescribed_by_user_id' => $actor->id, 'status' => 'Draft', 'doctor_comments' => $data['doctor_comments'] ?? null, 'approved_at' => null, 'created_at' => now(), 'updated_at' => now()]);
             foreach ($data['medications'] as $med) DB::table('prescription_medications')->insert(['prescription_id' => $id, ...$med, 'active_until' => null, 'is_active' => false, 'created_at' => now(), 'updated_at' => now()]);
         });
         return back()->with('status', 'Prescription saved as a draft. Review and approve it to activate the medications.');
@@ -201,9 +209,10 @@ class CareController extends Controller
 
     public function approvePrescription(Request $request, int $prescription)
     {
-        DB::transaction(function () use ($request, $prescription) {
+        $actor = $this->actor($request);
+        DB::transaction(function () use ($actor, $prescription) {
             $draft = DB::table('prescriptions')->where('id', $prescription)->lockForUpdate()->first();
-            abort_unless($draft && $draft->prescribed_by_user_id === $request->user()->id && $draft->status === 'Draft', 404);
+            abort_unless($draft && $draft->prescribed_by_user_id === $actor->id && $draft->status === 'Draft', 404);
             $appointment = DB::table('appointments')->where('id', $draft->appointment_id)->first();
             abort_unless($appointment && $appointment->meeting_confirmed && $appointment->appointment_date === today()->toDateString(), 403, 'Approval requires a confirmed meeting on the appointment date.');
             $draftMedications = DB::table('prescription_medications')->where('prescription_id', $prescription)->get();
@@ -219,8 +228,9 @@ class CareController extends Controller
 
     public function discontinueMedication(Request $request, int $medication)
     {
+        $actor = $this->actor($request);
         $record = DB::table('prescription_medications')->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')->where('prescription_medications.id', $medication)->select('prescription_medications.*', 'prescriptions.prescribed_by_user_id')->first();
-        abort_unless($record && $record->prescribed_by_user_id === $request->user()->id && $record->is_active, 404);
+        abort_unless($record && $record->prescribed_by_user_id === $actor->id && $record->is_active, 404);
         abort_if($record->active_from > today()->toDateString(), 422, 'A future medication has not started and cannot be discontinued yet.');
         DB::table('prescription_medications')->where('id', $medication)->update(['is_active' => false, 'active_until' => today()->toDateString(), 'updated_at' => now()]);
         return back()->with('status', 'Medication discontinued. The history is preserved.');
@@ -228,21 +238,23 @@ class CareController extends Controller
 
     public function caregiver(Request $request)
     {
+        $actor = $this->actor($request);
         $this->markMissed();
-        $rows = DB::table('roster_patient_assignments')->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')->join('patients', 'patients.id', '=', 'roster_patient_assignments.patient_id')->join('users as patient_users', 'patient_users.id', '=', 'patients.user_id')->whereDate('rosters.roster_date', today())->where('roster_patient_assignments.caregiver_user_id', $request->user()->id)->select('patients.id as patient_id', 'patient_users.first_name', 'patient_users.last_name')->get();
+        $rows = DB::table('roster_patient_assignments')->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')->join('patients', 'patients.id', '=', 'roster_patient_assignments.patient_id')->join('users as patient_users', 'patient_users.id', '=', 'patients.user_id')->whereDate('rosters.roster_date', today())->where('roster_patient_assignments.caregiver_user_id', $actor->id)->select('patients.id as patient_id', 'patient_users.first_name', 'patient_users.last_name')->get();
         $medications = DB::table('prescription_medications')->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')->whereIn('prescriptions.patient_id', $rows->pluck('patient_id'))->where('prescriptions.status', 'Approved')->where('prescription_medications.is_active', true)->whereDate('prescription_medications.active_from', '<=', today())->where(fn ($q) => $q->whereNull('prescription_medications.active_until')->orWhereDate('prescription_medications.active_until', '>=', today()))->get(['prescriptions.patient_id', 'prescription_medications.time_slot', 'prescription_medications.medication_name', 'prescription_medications.dosage']);
         return view('caregiver', ['patients' => $rows, 'medications' => $medications, 'activities' => DB::table('activity_records')->join('daily_care_records', 'daily_care_records.id', '=', 'activity_records.care_record_id')->whereIn('daily_care_records.patient_id', $rows->pluck('patient_id'))->whereDate('daily_care_records.care_date', today())->select('activity_records.*', 'daily_care_records.patient_id')->get()]);
     }
 
     public function completeActivity(Request $request, int $activity)
     {
+        $actor = $this->actor($request);
         $this->markMissed(); $record = DB::table('activity_records')->join('daily_care_records', 'daily_care_records.id', '=', 'activity_records.care_record_id')->where('activity_records.id', $activity)->select('activity_records.*', 'daily_care_records.patient_id')->first();
         abort_unless($record && $record->status === 'Pending' && Carbon::parse($record->scheduled_at)->isFuture(), 403, 'This activity is no longer editable.');
-        $assigned = DB::table('roster_patient_assignments')->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')->where('roster_patient_assignments.patient_id', $record->patient_id)->where('roster_patient_assignments.caregiver_user_id', $request->user()->id)->whereDate('rosters.roster_date', today())->exists();
+        $assigned = DB::table('roster_patient_assignments')->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')->where('roster_patient_assignments.patient_id', $record->patient_id)->where('roster_patient_assignments.caregiver_user_id', $actor->id)->whereDate('rosters.roster_date', today())->exists();
         abort_unless($assigned, 403);
-        DB::transaction(function () use ($activity, $request, $record) {
-            DB::table('activity_records')->where('id', $activity)->where('status', 'Pending')->update(['status' => 'Completed', 'completed_at' => now(), 'completed_by_user_id' => $request->user()->id, 'updated_at' => now()]);
-            DB::table('daily_care_records')->where('id', $record->care_record_id)->where('status', 'Scheduled')->update(['status' => 'Completed', 'completed_by_user_id' => $request->user()->id, 'completed_at' => now(), 'updated_at' => now()]);
+        DB::transaction(function () use ($activity, $actor, $record) {
+            DB::table('activity_records')->where('id', $activity)->where('status', 'Pending')->update(['status' => 'Completed', 'completed_at' => now(), 'completed_by_user_id' => $actor->id, 'updated_at' => now()]);
+            DB::table('daily_care_records')->where('id', $record->care_record_id)->where('status', 'Scheduled')->update(['status' => 'Completed', 'completed_by_user_id' => $actor->id, 'completed_at' => now(), 'updated_at' => now()]);
         });
         return back()->with('status', 'Activity completed.');
     }
@@ -281,11 +293,12 @@ class CareController extends Controller
 
     public function payment(Request $request, int $billing)
     {
+        $actor = $this->actor($request);
         $data = $request->validate(['amount' => ['required', 'numeric', 'gt:0'], 'notes' => ['nullable', 'string']]);
-        DB::transaction(function () use ($billing, $data, $request) {
+        DB::transaction(function () use ($billing, $data, $actor) {
             $invoice = DB::table('billing_records')->where('id', $billing)->lockForUpdate()->first(); abort_unless($invoice, 404);
             $balance = (float) $invoice->total_due - (float) $invoice->amount_paid; if ($data['amount'] > $balance) throw ValidationException::withMessages(['amount' => 'Payment exceeds the outstanding balance.']);
-            DB::table('payments')->insert(['billing_id' => $billing, 'recorded_by_user_id' => $request->user()->id, 'amount' => $data['amount'], 'payment_date' => now(), 'method' => 'Cash', 'notes' => $data['notes'] ?? null, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('payments')->insert(['billing_id' => $billing, 'recorded_by_user_id' => $actor->id, 'amount' => $data['amount'], 'payment_date' => now(), 'method' => 'Cash', 'notes' => $data['notes'] ?? null, 'created_at' => now(), 'updated_at' => now()]);
             $paid = (float) $invoice->amount_paid + (float) $data['amount']; DB::table('billing_records')->where('id', $billing)->update(['amount_paid' => $paid, 'status' => $paid >= (float) $invoice->total_due ? 'Paid' : 'Partially Paid', 'updated_at' => now()]);
         });
         return back()->with('status', 'Cash payment recorded.');
@@ -304,5 +317,13 @@ class CareController extends Controller
     private function usersInRole(string $role)
     {
         return DB::table('users')->join('roles', 'roles.id', '=', 'users.role_id')->where('roles.name', $role)->where('users.is_active', true)->where('users.is_approved', true)->select('users.id', 'users.first_name', 'users.last_name')->orderBy('users.last_name')->get();
+    }
+
+    private function actor(Request $request): User
+    {
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        return $user;
     }
 }
