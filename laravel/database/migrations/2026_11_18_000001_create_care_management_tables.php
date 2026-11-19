@@ -17,7 +17,7 @@ return new class extends Migration
         });
         Schema::create('patients', function (Blueprint $table) {
             $table->id(); $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
-            $table->foreignId('group_id')->nullable()->constrained('patient_groups')->nullOnDelete(); $table->date('admission_date'); $table->string('family_code_hash')->nullable();
+            $table->foreignId('group_id')->nullable()->constrained('patient_groups')->nullOnDelete(); $table->date('admission_date');
             $table->string('emergency_contact_name', 120); $table->string('emergency_contact_relationship', 60)->nullable(); $table->string('emergency_contact_phone', 25); $table->timestamps();
         });
         Schema::create('patient_family_members', function (Blueprint $table) {
@@ -43,7 +43,7 @@ return new class extends Migration
         Schema::create('appointments', function (Blueprint $table) {
             $table->id(); $table->foreignId('patient_id')->constrained()->restrictOnDelete(); $table->foreignId('doctor_user_id')->constrained('users')->restrictOnDelete();
             $table->date('appointment_date'); $table->time('appointment_time'); $table->string('status', 20)->default('Scheduled'); $table->boolean('meeting_confirmed')->default(false); $table->text('notes')->nullable(); $table->timestamps();
-            $table->unique(['patient_id', 'appointment_date']); $table->index(['doctor_user_id', 'appointment_date', 'appointment_time']);
+            $table->unique(['patient_id', 'appointment_date']); $table->index(['doctor_user_id', 'appointment_date', 'appointment_time'],'appointments_doctor_date_time_idx');
         });
         Schema::create('prescriptions', function (Blueprint $table) {
             $table->id(); $table->foreignId('appointment_id')->unique()->constrained()->restrictOnDelete(); $table->foreignId('patient_id')->constrained()->restrictOnDelete();

@@ -4,7 +4,7 @@ The Laravel application implements the confirmed project workflows: account appr
 
 ## Local setup
 
-Requirements: PHP 8.3+, Composer, and Node.js/npm if you want to build frontend assets. The default `.env.example` uses SQLite.
+Requirements: PHP 8.3+, Composer, MySQL with the `pdo_mysql` extension enabled, and Node.js/npm if you want to build frontend assets. The Laravel app uses a fresh database separate from the legacy SQL schema in the repository root.
 
 ```sh
 composer install
@@ -12,13 +12,7 @@ copy .env.example .env
 php artisan key:generate
 ```
 
-Create the SQLite database file before migrating if it does not already exist:
-
-```sh
-type nul > database/database.sqlite
-```
-
-In PowerShell, use `New-Item database/database.sqlite -ItemType File` instead.
+Create an empty MySQL database named `elderly_care_laravel` (or set `DB_DATABASE` to another new database) and set `DB_USERNAME` / `DB_PASSWORD` in `.env` to credentials that can access it. Do not point these migrations at the legacy `elderly_care_management` database created from `../database/schema.sql`; its column names differ from the Laravel schema.
 
 Set `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` in `.env` before the initial seed if you want a first Admin account. Then run:
 
