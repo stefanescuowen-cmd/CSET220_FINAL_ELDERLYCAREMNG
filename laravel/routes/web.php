@@ -28,6 +28,7 @@ Route::middleware(['auth', 'role:Admin,Supervisor,Doctor,Caregiver,Patient,Famil
     Route::put('/employees/{employee}/salary', [CareController::class, 'updateSalary'])->middleware('role:Admin')->name('employees.salary');
     Route::get('/approvals', [CareController::class, 'approvals'])->middleware('role:Admin,Supervisor')->name('approvals.index');
     Route::post('/approvals/{user}', [CareController::class, 'approve'])->middleware('role:Admin,Supervisor')->name('approvals.update');
+    Route::post('/family-invitations', [CareController::class, 'createFamilyInvitation'])->middleware('role:Admin,Supervisor')->name('family-invitations.store');
     Route::get('/appointments/doctors', [CareController::class, 'doctors'])->middleware('role:Admin,Supervisor')->name('appointments.doctors');
     Route::post('/appointments', [CareController::class, 'scheduleAppointment'])->middleware('role:Admin,Supervisor')->name('appointments.store');
     Route::post('/appointments/{appointment}/meeting', [CareController::class, 'markMeeting'])->middleware('role:Doctor')->name('appointments.meeting');

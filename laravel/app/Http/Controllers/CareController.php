@@ -18,47 +18,205 @@ class CareController extends Controller
         return view('dashboard', compact('user', 'role', 'counts'));
     }
 
+    
     public function myCare(Request $request)
     {
         $actor = $this->actor($request);
-        $date = $request->validate(['date' => ['nullable', 'date']])['date'] ?? today()->toDateString();
-        $patient = DB::table('patients')->where('user_id', $actor->id)->first();
-        if ($actor->role->name === 'Patient') abort_unless($patient, 404);
-        if ($actor->role->name === 'Family Member' && ! $request->filled('patient_id')) {
-            return view('my-care', ['activities' => collect(), 'appointment' => null, 'date' => $date, 'carePatient' => null]);
-        }
-        if ($actor->role->name === 'Family Member') {
-            $data = $request->validate(['patient_id' => ['required', 'exists:patients,id'], 'family_code' => ['required', 'string']]);
-            $family = DB::table('patient_family_members')->where('patient_id', $data['patient_id'])->where('family_user_id', $actor->id)->first();
-            abort_unless($family && Hash::check($data['family_code'], $family->family_code_hash), 403, 'Patient ID and family code do not match.');
-            $patient = DB::table('patients')->where('id', $data['patient_id'])->first();
-        }
-        $patientId = $patient->id;
-        $activities = DB::table('activity_records')->join('daily_care_records', 'daily_care_records.id', '=', 'activity_records.care_record_id')->where('daily_care_records.patient_id', $patientId)->whereDate('daily_care_records.care_date', $date)->select('activity_records.*')->orderBy('scheduled_at')->get();
-        $appointment = DB::table('appointments')->where('patient_id', $patientId)->whereDate('appointment_date', $date)->first();
-        if ($appointment) { $doctor = DB::table('users')->where('id', $appointment->doctor_user_id)->first(); $appointment->doctor_name = trim($doctor->first_name.' '.$doctor->last_name); }
-        $medications = DB::table('prescription_medications')->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')->where('prescriptions.patient_id', $patientId)->where('prescriptions.status', 'Approved')->whereDate('prescription_medications.active_from', '<=', $date)->where(fn ($q) => $q->whereNull('prescription_medications.active_until')->orWhereDate('prescription_medications.active_until', '>=', $date))->orderBy('prescription_medications.time_slot')->get(['prescription_medications.*']);
-        $caregivers = DB::table('roster_patient_assignments')->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')->join('users', 'users.id', '=', 'roster_patient_assignments.caregiver_user_id')->where('roster_patient_assignments.patient_id', $patientId)->whereDate('rosters.roster_date', $date)->select('users.first_name', 'users.last_name')->get();
-        $carePatient = DB::table('patients')->join('users', 'users.id', '=', 'patients.user_id')->where('patients.id', $patientId)->select('patients.id', 'users.first_name', 'users.last_name')->first();
-        return view('my-care', compact('activities', 'appointment', 'date', 'carePatient', 'medications', 'caregivers'));
-    }
 
+        $date = $request->validate([
+            'date' => ['nullable', 'date'],
+        ])['date'] ?? today()->toDateString();
+
+        $patient = DB::table('patients')
+            ->where('user_id', $actor->id)
+            ->first();
+
+        $familyPatients = collect();
+
+        if ($actor->role->name === 'Patient') {
+            abort_unless($patient, 404);
+        }
+
+        if ($actor->role->name === 'Family Member') {
+            $familyPatients = DB::table('patient_family_members')
+                ->join('patients', 'patients.id', '=', 'patient_family_members.patient_id')
+                ->join('users', 'users.id', '=', 'patients.user_id')
+                ->where('patient_family_members.family_user_id', $actor->id)
+                ->where('users.is_approved', true)
+                ->where('users.is_active', true)
+                ->select(
+                    'patients.id',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->orderBy('users.last_name')
+                ->get();
+
+            if (! $request->filled('patient_id')) {
+                return view('my-care', [
+                    'activities' => collect(),
+                    'appointment' => null,
+                    'date' => $date,
+                    'carePatient' => null,
+                    'medications' => collect(),
+                    'caregivers' => collect(),
+                    'familyPatients' => $familyPatients,
+                ]);
+            }
+
+            $data = $request->validate([
+                'patient_id' => ['required', 'integer', 'exists:patients,id'],
+            ]);
+
+            $patient = DB::table('patients')
+                ->join('patient_family_members', 'patient_family_members.patient_id', '=', 'patients.id')
+                ->where('patients.id', $data['patient_id'])
+                ->where('patient_family_members.family_user_id', $actor->id)
+                ->first(['patients.*']);
+
+            abort_unless($patient, 403, 'You do not have access to this patient.');
+        }
+
+        $patientId = $patient->id;
+
+        $activities = DB::table('activity_records')
+            ->join('daily_care_records', 'daily_care_records.id', '=', 'activity_records.care_record_id')
+            ->where('daily_care_records.patient_id', $patientId)
+            ->whereDate('daily_care_records.care_date', $date)
+            ->select('activity_records.*')
+            ->orderBy('scheduled_at')
+            ->get();
+
+        $appointment = DB::table('appointments')
+            ->where('patient_id', $patientId)
+            ->whereDate('appointment_date', $date)
+            ->first();
+
+        if ($appointment) {
+            $doctor = DB::table('users')
+                ->where('id', $appointment->doctor_user_id)
+                ->first();
+
+            $appointment->doctor_name = trim($doctor->first_name . ' ' . $doctor->last_name);
+        }
+
+        $medications = DB::table('prescription_medications')
+            ->join('prescriptions', 'prescriptions.id', '=', 'prescription_medications.prescription_id')
+            ->where('prescriptions.patient_id', $patientId)
+            ->where('prescriptions.status', 'Approved')
+            ->whereDate('prescription_medications.active_from', '<=', $date)
+            ->where(fn ($q) => $q->whereNull('prescription_medications.active_until')
+                ->orWhereDate('prescription_medications.active_until', '>=', $date))
+            ->orderBy('prescription_medications.time_slot')
+            ->get(['prescription_medications.*']);
+
+        $caregivers = DB::table('roster_patient_assignments')
+            ->join('rosters', 'rosters.id', '=', 'roster_patient_assignments.roster_id')
+            ->join('users', 'users.id', '=', 'roster_patient_assignments.caregiver_user_id')
+            ->where('roster_patient_assignments.patient_id', $patientId)
+            ->whereDate('rosters.roster_date', $date)
+            ->select('users.first_name', 'users.last_name')
+            ->get();
+
+        $carePatient = DB::table('patients')
+            ->join('users', 'users.id', '=', 'patients.user_id')
+            ->where('patients.id', $patientId)
+            ->select('patients.id', 'users.first_name', 'users.last_name')
+            ->first();
+
+        return view('my-care', compact(
+            'activities',
+            'appointment',
+            'date',
+            'carePatient',
+            'medications',
+            'caregivers',
+            'familyPatients'
+        ));
+    }
     public function approvals()
     {
-        return view('approvals', ['users' => DB::table('users')->join('roles', 'roles.id', '=', 'users.role_id')->where('users.is_approved', false)->where('users.is_active', true)->select('users.*', 'roles.name as role_name')->orderBy('users.created_at')->get()]);
+        $users = DB::table('users')
+            ->join('roles', 'roles.id', '=', 'users.role_id')
+            ->where('users.is_approved', false)
+            ->where('users.is_active', true)
+            ->select('users.*', 'roles.name as role_name')
+            ->orderBy('users.created_at')
+            ->get();
+
+        $patients = DB::table('patients')
+            ->join('users', 'users.id', '=', 'patients.user_id')
+            ->where('users.is_approved', true)
+            ->where('users.is_active', true)
+            ->select(
+                'patients.id',
+                'users.first_name',
+                'users.last_name'
+            )
+            ->orderBy('users.last_name')
+            ->get();
+
+        return view('approvals', compact('users', 'patients'));
     }
 
     public function approve(Request $request, int $user)
     {
-        $request->validate(['decision' => ['required', 'in:approve,reject']]);
-        $target = DB::table('users')->where('id', $user)->first(); abort_unless($target, 404);
-        DB::table('users')->where('id', $user)->update(['is_approved' => $request->decision === 'approve', 'is_active' => $request->decision === 'approve', 'updated_at' => now()]);
-        if ($request->decision === 'approve' && DB::table('patients')->where('user_id', $user)->whereNull('family_code_hash')->exists()) {
-            $familyCode = strtoupper(bin2hex(random_bytes(5)));
-            DB::table('patients')->where('user_id', $user)->update(['family_code_hash' => Hash::make($familyCode), 'updated_at' => now()]);
-            return back()->with('family_code', ['patient_id' => DB::table('patients')->where('user_id', $user)->value('id'), 'code' => $familyCode])->with('status', 'Patient approved. Provide the family code to the family contact securely.');
-        }
+        $request->validate([
+            'decision' => ['required', 'in:approve,reject'],
+        ]);
+
+        $target = DB::table('users')->where('id', $user)->first();
+
+        abort_unless($target, 404);
+
+        DB::table('users')
+            ->where('id', $user)
+            ->update([
+                'is_approved' => $request->decision === 'approve',
+                'is_active' => $request->decision === 'approve',
+                'updated_at' => now(),
+            ]);
+
         return back()->with('status', 'Registration reviewed.');
+    }
+
+    public function createFamilyInvitation(Request $request)
+    {
+        $data = $request->validate([
+            'patient_id' => ['required', 'exists:patients,id'],
+            'relationship_to_patient' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $patient = DB::table('patients')
+            ->join('users', 'users.id', '=', 'patients.user_id')
+            ->where('patients.id', $data['patient_id'])
+            ->where('users.is_approved', true)
+            ->where('users.is_active', true)
+            ->select('patients.id')
+            ->first();
+
+        abort_unless($patient, 404, 'The selected patient is unavailable.');
+
+        $code = strtoupper(bin2hex(random_bytes(16)));
+
+        DB::table('patient_family_invitations')->insert([
+            'patient_id' => $patient->id,
+            'code_hash' => Hash::make($code),
+            'relationship_to_patient' => $data['relationship_to_patient'] ?? 'Family Member',
+            'created_by_user_id' => $request->user()->id,
+            'expires_at' => now()->addDays(7),
+            'used_at' => null,
+            'used_by_user_id' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return back()
+            ->with('family_invitation', [
+                'patient_id' => $patient->id,
+                'code' => $code,
+            ])
+            ->with('status', 'Invitation created. Share the code securely; it can only be used once and expires in 7 days.');
     }
 
     public function patients(Request $request)
