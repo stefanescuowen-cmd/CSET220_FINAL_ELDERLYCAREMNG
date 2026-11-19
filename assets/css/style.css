@@ -53,36 +53,203 @@ p
 /* Header */
 header
 {
-    height: 140px;
-    background-color: var(--LSage);
+    outline: 5px var(--DSage) solid;
+    height: 190px;
+    background-color: var(--Sage);
     display: flex;
     padding: 20px;
+    position: fixed;
+    width: 100%;
+    top: 0;
 }
 header img
 {
     -webkit-user-drag: none;
     user-select: none;
     height: 100%;
+    border-radius: 12px;
 }
 header h1
 {
+    width: 100%;
+    border: var(--DSage) 12px solid;
+    font-size: 40px;
     font-weight: 900;
     justify-self: center;
+    height: 100%;
+    background-color: var(--LSage);
+    align-content: center;
+    border-radius: 25px;
+    text-align: center;
 }
 header #HH1
 {
-    width: 400px;
+    border-radius: 25px;
+    margin: 0px 10px;
+    width: 600px;
     height: 100%;
     align-content: center;
 }
 header #HImg
 {
+    border: 12px solid var(--DSage);
+    margin-right: 10px;
     height: 100%;
     width: 150px;
+    border-radius: 25px;
+    background-color: var(--DIvory);
+}
+
+#MM button, #STS button
+{
+    display: block;
+    background-color: transparent;
+    width: 100%;
+    height: 100%;
+    border: none;
+    font-size: 500%;
+    font-weight: 900;
+    color: var(--DCharcoal);
+    border-radius: 12px;
 }
 
 .Big
 {
-    font-size: larger;
+    font-size: 48px;
     color: var(--DCharcoal);
+}
+
+#HLink
+{
+    border: 12px solid var(--DSage);
+    margin-left: 10px;
+    height: 100%;
+    width: calc(100% - 640px);
+    border-radius: 25px;
+    background-color: var(--Sage);
+}
+
+#NL
+{
+    border-bottom: var(--DSage) 2px dashed;
+}
+#NL, #AL
+{
+    height: 50%;
+    align-content: center;
+    justify-self: center;
+}
+#NL div, #AL div
+{
+    display: flex;
+    float: left;
+    border-left: var(--DSage) 2px dashed;
+    padding: 0px 5px;
+}
+#NL a, #AL a
+{
+    min-height: 33px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 600;
+    font-size: 20px;
+    border-radius: 20px;
+    text-align: center;
+    padding: 5px;
+    height: 100%;
+    width: 100%;
+    color: var(--Charcoal);
+    text-decoration: none;
+    background-color: var(--LSage);
+    transition: 0.25s;
+}
+#NL div:first-child, #AL div:first-child
+{
+    border: none;
+}
+
+#HLink #NL .LB, #HLink #AL .LB
+{
+    border: var(--DSage) 2px dashed;
+    border-radius: 20px;
+    padding: 1px;
+    width: 100px;
+}
+
+#MB, #MM, #STS
+{
+    display: none;
+}
+
+#HLink a:hover
+{
+    transition: 0.1s;
+    color: var(--LCharcoal);
+    background-color: var(--Ivory);
+}
+#HLink a:active
+{
+    color: var(--DCharcoal);
+    background-color: var(--DIvory);
+}
+
+article
+{
+    margin: 210px 50px 10px 50px;
+}
+
+footer
+{
+    height: 100px;
+    background-color: var(--Sage);
+    outline: var(--DSage) 5px solid;
+}
+
+@media screen and (max-width: 1500px)
+{
+    #MB
+    {
+        display: block;
+    }
+
+    #AL, #NL
+    {
+        display: none;
+    }
+}
+@media screen and (max-width: 1000px)
+{
+    #MB
+    {
+        display: none;
+    }
+    #MM
+    {
+        display: block;
+        height: 100%;
+    }
+    header h1
+    {
+        font-size: 32px;
+    }
+    .Big
+    {
+        font-size: 40px;
+    }
+}
+@media screen and (max-width: 700px)
+{
+    #MM
+    {
+        display: none;
+    }
+    #STS
+    {
+        display: block;
+        position: absolute;
+        top: 150px;
+    }
+    header h1
+    {
+        font-size: 0px;
+    }
 }
